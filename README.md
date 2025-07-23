@@ -64,7 +64,7 @@ The initial analysis was guided by several hypotheses to uncover deeper insights
 | 2 | Clean & normalize complaint text; engineer initial “weak” sentiment labels | Complete |
 | 3 | Exploratory Data Analysis on product, company, sentiment & interaction features | Complete |
 | 4 | Train baseline BiLSTM deep-learning model for sentiment classification | Complete |
-| 5 | Test & demonstrate the trained BiLSTM model (CLI Application)** | Complete |
+| 5 | Test & demonstrate the trained BiLSTM model (CLI Application) | Complete |
 
 ---
 
