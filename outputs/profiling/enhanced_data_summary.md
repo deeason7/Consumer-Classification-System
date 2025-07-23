@@ -1,0 +1,2 @@
+Eda Summary
+- Analyzed Complaint Length- Analyzed Sentiment Distribution- Analyzed Product vs Sentiment- Analyzed Company vs Sentiment- Analyzed Crosstab between Timely Response and Sentiment- Analyzed Certain Keyword Presence vs Sentiment- Implemented the outcomes of the anaylsis
