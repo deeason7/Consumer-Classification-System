@@ -1,4 +1,8 @@
 # src/preprocessing/transformer.py
+"""
+Provides functions for feature engineering on the cleaned consumer complaint data.
+It includes sentiment analysis, target encoding, and the creation of interaction and text-based features like topic models.
+"""
 
 import pandas as pd
 import numpy as np
@@ -6,6 +10,10 @@ import re
 from textblob import TextBlob
 from nltk import pos_tag
 import nltk
+from typing import List, Dict, Tuple, Union
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
 
 # Keywords Specific to Financial Complaints
 extreme_negative_keywords = [
@@ -48,7 +56,6 @@ def safe_nltk_download(resource_name):
 safe_nltk_download("punkt")
 safe_nltk_download("averaged_perceptron_tagger")
 
-# Basic Tokenizer 
 def basic_tokenize(text: str):
     """
     Tokenize text into words by removing punctuation and splitting on whitespace.
@@ -65,10 +72,10 @@ def basic_tokenize(text: str):
     return text.split()
 
 # Weak Sentiment Classifier
-def weak_sentiment(text: str) -> str:
+def weak_sentiment(text: str) -> Tuple[str, float]:
     """
     Perform a simple, rule-based sentiment classification on text into
-    'neutral', 'negative', or 'extreme_negative'.
+    'neutral', 'negative', or 'extreme_negative' and intensity scoring.
 
     Uses keyword presence, TextBlob polarity, and part-of-speech tags to adjust scoring.
 
@@ -76,12 +83,12 @@ def weak_sentiment(text: str) -> str:
         text (str): The input complaint text.
 
     Returns:
-        str: One of 'neutral', 'negative', or 'extreme_negative'.
+        Tuple[str, float]: A tuple containing the sentiment label and the polarity score.
     """
 
     # Handle non-string or very short inputs
     if not isinstance(text, str) or len(text.strip()) < 10:
-        return "neutral"
+        return "neutral", 0.0
 
     text_lower = text.lower()
     words = basic_tokenize(text_lower)
@@ -107,7 +114,7 @@ def weak_sentiment(text: str) -> str:
     #Detect presence of negation terms
     negation_detected = any(word in words for word in negation_words)
 
-    # Start cumulative score from polarity
+    # Cumulative score from polarity
     cumulative_score = polarity
     
     # Penalize for extreme and negative keyword hits
@@ -122,20 +129,46 @@ def weak_sentiment(text: str) -> str:
         cumulative_score *= -0.7
 
     # Final Rules
+    label = "neutral" # Default
     if extreme_hit:
-        return "extreme_negative"
+        label = "extreme_negative"
     if cumulative_score < -0.2 or negative_hit:
-        return "negative"
+        label = "negative"
     if neutral_hit and polarity > -0.1:
-        return "neutral"
+        label = "neutral"
     if polarity > 0:
         #Positive polarity is treated as neutral in this context
-        return "neutral" 
+        label = "neutral"
 
-    #Default fallback
-    return "neutral"
+    return label, polarity
 
-# --- Target Encoding ---
+# Topic Modeling Feature Creation
+def add_topic_feature(df: pd.DataFrame, n_topics: int = 5) -> pd.DataFrame:
+    """
+    Adds topic modeling features to the DataFrame using TF-IDF and LDA
+
+    Args:
+        df (pd.DataFrame): The DataFrame with a 'text_cleaned' column.
+        n_topics (int): The number of topics to generate.
+
+    Returns:
+        pd.DataFrame: The DataFrame with added 'topic_X' columns
+    """
+    # Vectorize
+    vectorizer = TfidfVectorizer(max_features=1000, stop_words='english', ngram_range=(1,2))
+    tfidf_matrix = vectorizer.fit_transform(df['text_cleaned'])
+
+    # Apply Latent Dirichlet Allocation
+    lda = LatentDirichletAllocation(n_components=n_topics, random_state=42)
+    topic_dist = lda.fit_transform(tfidf_matrix)
+
+    # Add topic distribution as feature to the DataFrame
+    for i in range(n_topics):
+        df[f'topic_{i}'] = topic_dist[:, i]
+
+    return df
+
+# Target Encoding
 def calculate_target_encoding(df: pd.DataFrame, group_col: str, target_col: str, min_samples_leaf=20, smoothing=10) -> dict:
     """
     Compute target-encoded values for categories in group_col with smoothing.
@@ -165,7 +198,7 @@ def calculate_target_encoding(df: pd.DataFrame, group_col: str, target_col: str,
 def transform_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Perform full feature engineering pipeline for complaint dispute modeling,
-    adding binary flags, encodings, sentiment labels, and interaction terms.
+    adding binary flags, encodings, sentiment labels, topic models and interaction terms.
 
     Args:
         df (pd.DataFrame): Raw complaints DataFrame with required columns.
@@ -173,6 +206,8 @@ def transform_features(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Transformed DataFrame ready for modeling.
     """
+    df = df.copy()
+
     # Binary Encoding
     df["consumer_disputed_binary"] = df["consumer_disputed?"].map({"Yes": 1, "No": 0})
     df["timely_response_binary"] = df["timely_response"].map({"Yes": 1, "No": 0})
@@ -186,12 +221,14 @@ def transform_features(df: pd.DataFrame) -> pd.DataFrame:
     # Compute and map target-encoded dispute rates for product and company
     product_encoding = calculate_target_encoding(df, "product", "consumer_disputed_binary")
     company_encoding = calculate_target_encoding(df, "company", "consumer_disputed_binary")
-
     df["product_dispute_rate"] = df["product"].map(product_encoding).fillna(df["consumer_disputed_binary"].mean())
     df["company_dispute_rate"] = df["company"].map(company_encoding).fillna(df["consumer_disputed_binary"].mean())
 
-    # Apply weak sentiment classifier and encode sentiment labels
-    df["sentiment"] = df["text_cleaned"].apply(weak_sentiment)
+    # Apply weak sentiment classifier to get both label and sentiment
+    sentiment_results = df["text_cleaned"].apply(weak_sentiment)
+    df["sentiment"] = sentiment_results.apply(lambda x: x[0])
+    df["sentiment_intensity"] = sentiment_results.apply(lambda  x: x[1])
+
     df["sentiment_encoded"] = df["sentiment"].map({"neutral": 0, "negative": 1, "extreme_negative": 2}).fillna(0).astype(int)
 
     # Interaction features combining sentiment/response and company/response
