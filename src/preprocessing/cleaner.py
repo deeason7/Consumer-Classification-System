@@ -1,3 +1,8 @@
+"""
+Provides functions for cleaning and preparing consumer complaint text data.
+It includes utilities for cleaning individual text strings and for processing pandas DataFrame.
+"""
+
 import pandas as pd
 import re
 import unicodedata
@@ -19,11 +24,11 @@ def clean_text(text: str) -> str:
     Returns:
         str: Cleaned, lowercase text containing only letters and spaces.
     """
-    if pd.isnull(text):
+    if not isinstance(text, str) or pd.isnull(text):
         return ""
         
     # Normalize unicode characters
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8", "ignore")
 
     # Lowercase
     text = text.lower()
@@ -44,12 +49,12 @@ def clean_complaints_df(df: pd.DataFrame) -> pd.DataFrame:
     """
     Clean the raw CFPB complaints DataFrame for downstream processing.
 
-    Steps performed:
-    1. Drop rows missing the complaint narrative.
-    2. Remove columns that are mostly null or irrelevant.
-    3. Eliminate duplicate complaints by ID.
-    4. Apply text cleaning to the narrative.
-    5. Trim whitespace on all object (string) columns.
+    Includes:
+    1. Dropping rows missing the complaint narrative.
+    2. Removing columns that are mostly null or irrelevant.
+    3. Eliminating duplicate complaints by ID.
+    4. Applying text cleaning to the narrative.
+    5. Trimming whitespace on all object (string) columns.
 
     Args:
         df (pd.DataFrame): Raw DataFrame containing complaint records.
