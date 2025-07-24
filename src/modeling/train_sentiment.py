@@ -1,203 +1,234 @@
+# src/modeling/train_sentiment.py
 """
-Module: Sentiment Classification Pipeline
-
-Defines routines to load and preprocess data, construct a hybrid LSTM + structured-input model, and train/evaluate the model end-to-end, including saving all necessary artifacts for downstream use.
+Defines the end-to-end pipeline for training and evaluating the sentiment classification model.
+It includes data preparation, model building, hyperparameter tuning, cross-validation, and artifact saving.
 """
-#Import required libraries
 import pickle
 import os
 import sys
 import json
+import tensorflow as tf
+from typing import Tuple, Dict, Any, List
 
 import pandas as pd
 import numpy as np
+import keras_tuner as kt
 
-# Scikit-learn tools for preprocessing and evaluation
 from sklearn.utils.class_weight import compute_class_weight
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report
 
-# TensorFlow and Keras modules for model building
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (Input, Embedding, Bidirectional, LSTM, Dense, Dropout, Concatenate)
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.optimizers.legacy import Adam
+from tensorflow.keras.optimizers import Adam
 
-# Ensure parent directory is in the system path
-project_root = os.path.abspath("..")
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# Function to prepare text and structured data
-def prepare_data(path="../data/processed/consumer_complaints_final.csv", vocab_size=25000, max_len=250)->tuple:
-    """
-    Load and preprocess data for sentiment classification
+DATA_PATH = os.path.join(project_root, "data/processed/consumer_complaints_final.csv")
 
-    Performs:
-    - Loads cleaned complaint data from CSV.
-    - Encodes sentiment labels into integers using LabelEncoder.
-    - Splits the features into text data and structured numeric features.
-    - Tokenizes and pads the text data to a fixed maximum length.
-    - Splits the dataset into training, validation, and test subsets using stratified sampling.
+# Module-level Constants
+VOCAB_SIZE = 25000
+MAX_LEN = 250
 
-    Args:
-        path(str): File path to the prerprocessed CSV data.
-        vocab_size(int): Maximum number of words to keep in the tokenizer vocabulary.
-        max_len(int): Maximum sequence length for padding/truncation.
-
-    Returns:
-        Tuple:
-            X_seq_train (ndarray): Padded training sequences.
-            X_struct_train (ndarray): Structured training features.
-            y_train (ndarray): Encoded training labels.
-            X_seq_val(ndarray): Padded validation sequences.
-            X_struct_val(ndarray): Structured validation features.
-            y_val (ndarray): Encoded validation labels.
-            X_seq_test(ndarray): Padded test sequences.
-            X_struct_test(ndarray): Structured test features.
-            y_test(ndarray): Encoded test labels.
-            tokenizer(Tokenizer): Fitted Keras tokenizer object.
-            le(LabelEncoder): Fitted label encoder object for inverse mapping.
-    """
+def prepare_data(path: str, vocab_size: int, max_len: int) -> Tuple:
+    """Loads, preprocesses, and splits the data for sentiment classification."""
     df = pd.read_csv(path)
-    
-    #Remove rows with null cleaned text
     df = df[df['text_cleaned'].notna()].copy()
 
-    # Encode Sentiment labels into integers
     le = LabelEncoder()
     df['sentiment_encoded'] = le.fit_transform(df['sentiment'])
 
-    # Split into text and structured input features
     X_text = df['text_cleaned']
     X_struct = df[['text_length', 'timely_response_binary', 'product_dispute_rate',
-                   'company_dispute_rate', 'keyword_flag']].values.astype(np.float32)
-    y = df['sentiment_encoded']
+                   'company_dispute_rate', 'keyword_flag', 'sentiment_intensity']].values.astype(np.float32)
+    y = df['sentiment_encoded'].values
 
-    # Tokenize and pad text data
     tokenizer = Tokenizer(num_words=vocab_size, oov_token="<OOV>")
     tokenizer.fit_on_texts(X_text)
     X_seq = pad_sequences(tokenizer.texts_to_sequences(X_text), maxlen=max_len)
 
-    # Create train, validation, and test sets (70-15-15 split)
-    X_seq_train, X_seq_temp, X_struct_train, X_struct_temp, y_train, y_temp = train_test_split(
-        X_seq, X_struct, y, test_size=0.3, stratify=y, random_state=42
-    )
-    X_seq_val, X_seq_test, X_struct_val, X_struct_test, y_val, y_test = train_test_split(
-        X_seq_temp, X_struct_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
+    X_seq_train, X_seq_test, X_struct_train, X_struct_test, y_train, y_test = train_test_split(
+        X_seq, X_struct, y, test_size=0.2, stratify=y, random_state=42
     )
 
     return (X_seq_train, X_struct_train, y_train,
-            X_seq_val, X_struct_val, y_val,
             X_seq_test, X_struct_test, y_test,
             tokenizer, le)
 
-# Function to build a hybrid LSTM + structured model 
-def build_model(vocab_size=25000, max_len=250) ->  Model:
-    """
-    Construct  a hybrid Keras model that processes text via an Embedding + BiLSTM and merges with structured features for final classification.
 
-    Args:
-    vocab_size(int): Vocabulary size of the tokenizer.
-    max_len(int): Length of text sequences.
+def build_model(hp: kt.HyperParameters, vocab_size: int, max_len: int) -> Model:
+    """Constructs a hybrid Keras model, adaptable for Keras Tuner."""
+    # Define search space for hyperparameters
+    lstm_units = hp.Int('lstm_units', 64, 256, step=64)
+    dropout_rate = hp.Float('dropout_rate', 0.2, 0.5, step=0.1)
+    learning_rate = hp.Choice('learning_rate', [1e-2, 1e-3, 1e-4])
 
-    Returns:
-    Model: Compiled Keras model ready for training.
-    """
-    #Input layers for text and structured data
     text_input = Input(shape=(max_len,), name="text_input")
-    struct_input = Input(shape=(5,), name="struct_input")
-    
-    # Text branch with embedding and BiLSTM
+    struct_input = Input(shape=(6,), name="struct_input")
+
     x = Embedding(input_dim=vocab_size, output_dim=128)(text_input)
-    x = Bidirectional(LSTM(64))(x)
-    x = Dropout(0.3)(x)
+    x = Bidirectional(LSTM(units=lstm_units))(x)
+    x = Dropout(rate=dropout_rate)(x)
 
-    #Merged with structured inputs
     merged = Concatenate()([x, struct_input])
-    merged = Dense(64, activation='relu')(merged)
-    merged = Dropout(0.3)(merged)
-    output = Dense(3, activation='softmax')(merged) # 3 sentiment classes
+    merged = Dense(units=lstm_units, activation='relu')(merged)
+    merged = Dropout(rate=dropout_rate)(merged)
+    output = Dense(3, activation='softmax')(merged)
 
-    # Compile the model
     model = Model(inputs=[text_input, struct_input], outputs=output)
     model.compile(
         loss='sparse_categorical_crossentropy',
-        optimizer=Adam(),
+        optimizer=Adam(learning_rate=learning_rate),
         metrics=['accuracy']
     )
     return model
 
-# Full training, evaluation, and artifact saving pipeline
-def train_and_evaluate_sentiment():
-    """
-    Orchestrate the full sentiment training pipeline:
-    1. Load and split data
-    2. Build model and compute class weights
-    3. Train with callbacks for early stopping and LR reduction
-    4. Evaluate on test set and generate a classification report
-    5. Save model, tokenizer, label encoder, and evaluation artifacts
-    """
-    # Load and preprocess data
-    (X_seq_train, X_struct_train, y_train,
-     X_seq_val, X_struct_val, y_val,
-     X_seq_test, X_struct_test, y_test,
-     tokenizer, le) = prepare_data()
 
-    # Compute class weights to handle class imbalance
-    class_weights = dict(
-        zip(np.unique(y_train),
-            compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train))
+def run_hyperparameter_tuning(X_seq_train, X_struct_train, y_train, models_dir: str) -> Dict[str, Any]:
+    """Performs hyperparameter tuning using Keras Tuner."""
+    model_builder = lambda hp: build_model(hp, vocab_size=VOCAB_SIZE, max_len=MAX_LEN)
+
+    tuner = kt.Hyperband(
+        model_builder,
+        objective='val_accuracy',
+        max_epochs=10,
+        factor=3,
+        directory=os.path.dirname(models_dir),
+        project_name=os.path.basename(models_dir)
     )
 
-    # Build the model
-    model = build_model()
-    
-    # Callbacks for better training control
-    early_stop = EarlyStopping(monitor='val_loss', patience=4, restore_best_weights=True)
-    lr_schedule = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2)
+    stop_early = EarlyStopping(monitor='val_loss', patience=5)
 
-    # Model training
-    history = model.fit(
-        {"text_input": X_seq_train, "struct_input": X_struct_train}, y_train,
-        validation_data=({"text_input": X_seq_val, "struct_input": X_struct_val}, y_val),
-        epochs=30,
+    X_seq_t, X_seq_v, X_struct_t, X_struct_v, y_t, y_v = train_test_split(
+        X_seq_train, X_struct_train, y_train, test_size=0.2, random_state=42
+    )
+
+    tuner.search(
+        {'text_input': X_seq_t, 'struct_input': X_struct_t}, y_t,
+        epochs=50,
+        validation_data=({'text_input': X_seq_v, 'struct_input': X_struct_v}, y_v),
+        callbacks=[stop_early]
+    )
+
+    best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
+    print(f"""
+    Best hyperparameters found:
+    - LSTM Units: {best_hps.get('lstm_units')}
+    - Dropout Rate: {best_hps.get('dropout_rate')}
+    - Learning Rate: {best_hps.get('learning_rate')}
+    """)
+    return best_hps.values
+
+
+def train_with_cross_validation(X_seq, X_struct, y, best_hps_values: Dict[str, Any], n_splits: int = 5) -> Tuple[
+    Model, Dict[str, List[float]]]:
+    """Trains the model using stratified k-fold cross-validation."""
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    cv_history = {'accuracy': [], 'val_accuracy': [], 'loss': [], 'val_loss': []}
+
+    for fold, (train_idx, val_idx) in enumerate(skf.split(X_seq, y)):
+        print(f"\n----------- FOLD {fold + 1}/{n_splits} -------")
+        hp = kt.HyperParameters()
+        hp.values = best_hps_values
+        model = build_model(hp, vocab_size=VOCAB_SIZE, max_len=MAX_LEN)
+
+        X_seq_t, X_struct_t, y_t = X_seq[train_idx], X_struct[train_idx], y[train_idx]
+        X_seq_v, X_struct_v, y_v = X_seq[val_idx], X_struct[val_idx], y[val_idx]
+
+        class_weights = dict(
+            zip(np.unique(y_t), compute_class_weight(class_weight='balanced', classes=np.unique(y_t), y=y_t)))
+
+        history = model.fit(
+            {'text_input': X_seq_t, 'struct_input': X_struct_t}, y_t,
+            validation_data=({'text_input': X_seq_v, 'struct_input': X_struct_v}, y_v),
+            epochs=30, batch_size=64, class_weight=class_weights,
+            callbacks=[EarlyStopping(patience=4), ReduceLROnPlateau(patience=2)],
+            verbose=2
+        )
+
+        best_epoch_idx = np.argmin(history.history['val_loss'])
+        for key in cv_history:
+            cv_history[key].append(history.history[key][best_epoch_idx])
+
+    print("\n--- CROSS-VALIDATION SUMMARY -------")
+    for key in cv_history:
+        print(f"Average {key}: {np.mean(cv_history[key]):.4f} (+/- {np.std(cv_history[key]):.4f})")
+
+    print("\n------- TRAINING FINAL MODEL ON ALL DATA-----")
+    final_hp = kt.HyperParameters()
+    final_hp.values = best_hps_values
+    final_model = build_model(final_hp, vocab_size=VOCAB_SIZE, max_len=MAX_LEN)
+    class_weights = dict(zip(np.unique(y), compute_class_weight(class_weight='balanced', classes=np.unique(y), y=y)))
+
+    final_model.fit(
+        {'text_input': X_seq, 'struct_input': X_struct}, y,
+        epochs=15,
         batch_size=64,
         class_weight=class_weights,
-        callbacks=[early_stop, lr_schedule],
+        callbacks=[ReduceLROnPlateau(monitor='loss', patience=2)],
         verbose=2
     )
 
-    # Final test evaluation
-    y_pred_prob = model.predict({"text_input": X_seq_test, "struct_input": X_struct_test})
+    return final_model, cv_history
+
+
+def train_and_evaluate_sentiment(
+        tune: bool = False,
+        data_path: str = DATA_PATH,
+        models_dir: str = "models",
+        outputs_dir: str = "outputs"
+):
+    """Main orchestrator for the full sentiment training pipeline."""
+    model_path = os.path.join(models_dir, "sentiment_model.keras")
+    tokenizer_path = os.path.join(outputs_dir, "tokenizer_sentiment.pkl")
+    encoder_path = os.path.join(outputs_dir, "label_encoder_sentiment.pkl")
+    report_path = os.path.join(outputs_dir, "sentiment_classification_report.json")
+    cv_scores_path = os.path.join(outputs_dir, "cross_validation_scores.csv")
+
+    (X_seq_train, X_struct_train, y_train,
+     X_seq_test, X_struct_test, y_test,
+     tokenizer, le) = prepare_data(data_path, VOCAB_SIZE, MAX_LEN)
+
+    if tune:
+        tuning_dir = os.path.join(models_dir, 'sentiment_tuning')
+        best_hps_values = run_hyperparameter_tuning(X_seq_train, X_struct_train, y_train, tuning_dir)
+    else:
+        best_hps_values = {'lstm_units': 128, 'dropout_rate': 0.3, 'learning_rate': 0.001}
+        print("Using default hyperparameters. To tune, call with tune=True.")
+
+    final_model, cv_results = train_with_cross_validation(
+        X_seq_train, X_struct_train, y_train, best_hps_values
+    )
+
+    y_pred_prob = final_model.predict({"text_input": X_seq_test, "struct_input": X_struct_test})
     y_pred = np.argmax(y_pred_prob, axis=1)
 
-    # Save model and preprocessing artifacts
-    model.save("../models/sentiment_model.keras")
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(outputs_dir, exist_ok=True)
 
-    with open("../outputs/tokenizer_sentiment.pkl", "wb") as f:
+    final_model.save(model_path)
+    with open(tokenizer_path, "wb") as f:
         pickle.dump(tokenizer, f)
-
-    with open("../outputs/label_encoder_sentiment.pkl", "wb") as f:
+    with open(encoder_path, "wb") as f:
         pickle.dump(le, f)
 
-    # Save evaluation report
-    report = classification_report(y_test, y_pred, target_names=le.classes_, output_dict=True)
-    with open("../outputs/sentiment_accuracy.txt", "w") as f:
+    report = classification_report(y_test, y_pred, target_names=le.classes_, output_dict=True, zero_division=0)
+    with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
 
-    # Save predictions for inspection
-    predictions_df = pd.DataFrame({
-        "true_sentiment": le.inverse_transform(y_test),
-        "predicted_sentiment": le.inverse_transform(y_pred)
-    })
-    predictions_df.to_csv("../outputs/predictions_sentiment.csv", index=False)
+    if cv_results:
+        cv_df = pd.DataFrame(cv_results)
+        cv_df.to_csv(cv_scores_path, index=False)
 
-    print("Sentiment model trained and evaluated on test data.")
+    print(f"\nSentiment model training complete. Artifacts saved to {models_dir} and {outputs_dir}")
 
-# Execute the training pipeline when run directly
+
 if __name__ == '__main__':
-    train_and_evaluate_sentiment()
+    train_and_evaluate_sentiment(tune=False)
