@@ -1,0 +1,27 @@
+# Python general
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+env/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Data files (to avoid uploading large or sensitive data)
+data/raw/consumer_complaints.csv
+data/processed/
+
+# Trained models and artifacts
+models/
+hyper_tuning/
+
+# Output files
+outputs/
+
+# IDE and OS specific
+.vscode/
+.idea/
+.DS_Store
