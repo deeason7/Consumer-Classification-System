@@ -45,15 +45,14 @@ class ModelLoader:
             ValueError: If loading fails (e.g., corrupted file).
         """
         self.validate_path()
-        # Use Keras's load_model under the hood
 
+        # Use Keras's load_model under the hood
         try:
             self.model = keras_load(self.model_path, compile=False)
         except Exception as e:
             raise ValueError(f"Failed to load model from {self.model_path}: {e}")
         return self.model
 
-# Sanity check
 if __name__ == "__main__":
     try:
         loader = ModelLoader()

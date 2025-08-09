@@ -1,8 +1,4 @@
 # deployment/app.py
-"""
-CLI Application to tie together ModelLoader, Predictor, and Storage for an end-to-end demo.
-"""
-
 import os
 import datetime
 from dotenv import load_dotenv
@@ -12,102 +8,74 @@ from deployment.predictor import Predictor
 from deployment.storage import Storage
 
 def main():
-    # Load environment variables from .env
     load_dotenv()
 
-
-    #Fetch paths from environment or defaults
+    # Fetch paths from environment variables
     MODEL_PATH = os.environ.get("MODEL_PATH")
-    TOKENIZER_PATH = os.environ.get("TOKENIZER_PATH")
-    LABEL_ENCODER_PATH = os.environ.get("LABEL_ENCODER_PATH")
     DB_PATH = os.environ.get("DB_PATH")
 
-    # Verify artifact existence
-    missing = []
-    for path in (MODEL_PATH, TOKENIZER_PATH, LABEL_ENCODER_PATH):
-        if not os.path.exists(path):
-            missing.append(path)
-    if missing:
-        print("Missing required file(s):")
-        for p in missing:
-            print(f"   - {p}")
-        print("Please update paths or environment variables and try again.")
-        return
-
-    #Initialize ModelLoader and load model
+    # Initialize components
     try:
-        loader = ModelLoader(MODEL_PATH)
-        model = loader.load()
+        model = ModelLoader(MODEL_PATH).load()
         print("Model loaded successfully.")
+        
+        predictor = Predictor(model=model)
+        print("Predictor initialized successfully.")
+        
+        storage = Storage(db_path=DB_PATH)
+        print(f"SQLite database ready at: {DB_PATH}\n")
     except Exception as err:
-        print(f"Error loading model: {err}")
+        print(f"Initialization Error: {err}")
         return
 
-    #Initialize Predictor
-    try:
-        predictor = Predictor(
-            model=model,
-            tokenizer_path=TOKENIZER_PATH,
-            label_encoder_path=LABEL_ENCODER_PATH,
-            max_len=250,
-            struct_dim=5
-        )
-        print(" Predictor initialized successfully.")
-    except Exception as err:
-        print(f"  Error initializing Predictor: {err}")
-        return
-
-    #Initialize Storage (SQLite)
-    try:
-        storage = Storage(db_path= DB_PATH)
-        print(f"SQLite database ready at: {DB_PATH}")
-    except Exception as err:
-        print(f"Error initializing Storage: {err}")
-        return
-
-    #Interactive loop
-    print("\n Deployment Demo CLI")
-    print("Enter complaint narrative (or type 'exit' to quit): \n")
+    # Interactive loop for user input
+    print("Consumer Complaint Sentiment CLI")
+    print("Enter the details for a new complaint. Type 'exit' to quit.\n")
 
     while True:
-        user_input = input("> ").strip()
-        if user_input.lower() in ("exit", "quit"):
-            print("Exiting. Goodbye!")
+        text = input("Enter complaint narrative: ").strip()
+        if text.lower() in ("exit", "quit"):
             break
+        
+        product = input("Enter product (e.g., 'Mortgage', 'Credit card'): ").strip()
+        company = input("Enter company (e.g., 'Wells Fargo & Company'): ").strip()
+        timely = input("Was the response timely? (yes/no): ").strip()
 
-        if not user_input:
-            print("Please enter some text or 'exit' to quit.")
+        if not all([text, product, company, timely]):
+            print("\n All fields are required. Please try again.\n")
             continue
 
-        # Run prediction
+        # Run prediction with all inputs
         try:
-            result = predictor.predict(user_input)
+            result = predictor.predict(text, product, company, timely)
         except Exception as err:
-            print(f"Prediction error: {err}")
+            print(f" Prediction error: {err}")
             continue
 
-        # Extract Results
-        label = result["label"]
-        confidence = result["confidence"]
-        struct_feats = result["structured_features"]
-
-        #Display results
-        print(f"Prediction: ")
-        print(f"    Label:        {label}")
-        print(f"    Confidence:   {confidence:.2f}")
-        print("     Structured features used:")
-        for feat_name, feat_val in struct_feats.items():
-            print(f"           -{feat_name}: {feat_val}")
-        print()
-
-        #Log to SQLite
+        # Display results clearly
+        print("\nPrediction Result")
+        print(f"  Sentiment Label:  {result['label']}")
+        print(f"  Confidence Score: {result['confidence']:.2f}")
+        print("\n  Features Used:")
+        for name, val in result['structured_features'].items():
+            print(f"    - {name}: {val}")
+        
+        # Log the prediction to the database
         timestamp = datetime.datetime.now().isoformat()
         try:
-            storage.log(timestamp, user_input, label, confidence, [str(v) for v in struct_feats.values()])
-            print(f"Logged prediction at {timestamp}\n")
-
+            storage.log(
+                timestamp=timestamp, 
+                text=text, 
+                label=result['label'], 
+                confidence=result['confidence'],
+                # Store features as a string for logging
+                features=str(result['structured_features'])
+            )
+            print(f"\n Logged prediction at {timestamp}\n")
         except Exception as err:
-            print(f"Failed to log prediction: {err}\n")
+            print(f"\n Failed to log prediction: {err}\n")
+
+    print("Exiting. Goodbye!")
 
 if __name__ == "__main__":
     main()
