@@ -115,18 +115,25 @@ The primary way to interact with the model is through the command-line applicati
 
     **Example Interaction:**
 
-   Deployment Demo CLI<br>
-Enter complaint narrative (or type 'exit' to quit): <br>
+Consumer Complaint Sentiment CLI
+Enter the details for a new complaint. Type 'exit' to quit.
 
-> I was charged an unexpected fee for fraud protection services. I have tried contacting customer service multiple times with no response!<br>
-Prediction: <br>
-    Label:        extreme_negative<br>
-    Confidence:   0.98<br>
-     Structured features used:<br>
-           -text_length: 21.0<br>
-           -timely_response_binary: 0<br>
-           -product_dispute_rate: 0.0<br>
-           -company_dispute_rate: 0.0<br>
-           -keyword_flag: 1<br>
+Enter complaint narrative: I was charged an unexpected fee for fraud protection services. I have tried contacting customer service multiple times with no response!
+Enter product (e.g., 'Mortgage', 'Credit card'): Credit Card
+Enter company (e.g., 'Wells Fargo & Company'): Chase
+Was the response timely? (yes/no): no
+
+Prediction Result
+  Sentiment Label:  extreme_negative
+  Confidence Score: 1.00
+
+  Features Used:
+    - text_length: 21.0
+    - timely_response_binary: 0
+    - product_dispute_rate: 0.9679999947547913
+    - company_dispute_rate: 1.0192999839782715
+    - keyword_flag: 1
+
+ Logged prediction at 2025-08-08T22:19:41.008879
 
 
