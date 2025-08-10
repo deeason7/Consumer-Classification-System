@@ -45,7 +45,6 @@ class Predictor:
         """
         Runs a prediction on a full set of inputs.
         """
-
         # Preprocess the text input
         padded_seq = self._preprocess_text(text)
         

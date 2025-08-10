@@ -9,8 +9,7 @@ load_dotenv()
 
 class FeatureEngineer:
     """
-    Handles the creation of the structured feature vector for live prediction
-    by loading pre-computed artifacts from the training pipeline.
+    Handles the creation of the structured feature vector for live prediction by loading pre-computed artifacts from the training pipeline.
     """
 
     def __init__(self,
@@ -30,8 +29,7 @@ class FeatureEngineer:
 
     def _find_best_match(self, user_input: str, mapping_dict: dict) -> str:
         """
-        Finds the best match for a user's input in a dictionary's keys.
-        Tries for a case-insensitive match first, then a partial match.
+        Finds the best match for a user's input in a dictionary's keys. Tries for a case-insensitive match first, then a partial match.
         """
         user_input_lower = user_input.lower()
 
@@ -50,13 +48,13 @@ class FeatureEngineer:
 
     def engineer_features(self, text: str, product: str, company: str, timely_response: str) -> np.ndarray:
         """
-        Creates the structured feature vector from raw inputs using robust matching.
+        Creates the structured feature vector from raw inputs
         """
-        #  Find the best matching keys for product and company
+        # Find the best matching keys for product and company
         product_key = self._find_best_match(product, self.product_map)
         company_key = self._find_best_match(company, self.company_map)
 
-        #  Engineer features using the matched keys
+        # Engineer features using the matched keys
         text_length = float(len(text.split()))
         timely_response_binary = 1.0 if timely_response.lower() == 'yes' else 0.0
         product_dispute_rate = float(self.product_map.get(product_key, self.global_mean))

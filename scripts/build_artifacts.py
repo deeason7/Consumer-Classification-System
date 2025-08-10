@@ -13,8 +13,8 @@ from src.preprocessing.transformer import calculate_target_encoding, extreme_neg
 
 def build_deployment_artifacts():
     """
-    Loads the final processed data to create and save the artifacts required for the deployment CLI. This script should be run after the
-    data processing notebooks are complete.
+    Loads the final processed data to create and save artifacts required for the deployment CLI and Web App.
+    This script should be run after the data processing notebooks are complete.
     """
     print("Starting deployment artifact building")
 
@@ -44,12 +44,21 @@ def build_deployment_artifacts():
         pickle.dump(company_map, f)
     print("Saved company dispute map.")
 
+    # Extract full lists of products and companies for UI dropdowns
+    all_products = sorted(df['product'].unique().tolist())
+    all_companies = sorted(df['company_grouped'].unique().tolist())
+
+    print(f"Extracted {len(all_products)} unique products and {len(all_companies)} unique companies.")
+
     #  Save Feature Configuration for Deployment
     feature_config = {
         "global_mean_dispute_rate": df['sentiment_encoded'].mean(),
         "extreme_negative_keywords": extreme_negative_keywords,
-        "negative_keywords": negative_keywords
+        "negative_keywords": negative_keywords,
+        "all_products": all_products,
+        "all_companies": all_companies
     }
+
     with open(os.path.join(OUTPUTS_PATH, "feature_config.json"), "w") as f:
         json.dump(feature_config, f, indent=2)
     print("Saved feature configuration file.")

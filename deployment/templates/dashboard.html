@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Agent Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 2rem; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+        th, td { padding: 0.75rem 1rem; border: 1px solid #dee2e6; text-align: left; }
+        th { background-color: #f8f9fa; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .sentiment { font-weight: bold; padding: 0.25rem 0.5rem; border-radius: 4px; color: white; }
+        .sentiment-extreme_negative { background-color: #dc3545; }
+        .sentiment-negative { background-color: #ffc107; color: #333; }
+        .sentiment-neutral { background-color: #28a745; }
+        a { color: #007bff; text-decoration: none; font-weight: bold; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Agent Dashboard: Complaint Priority Queue</h1>
+        <p>Complaints are sorted by the highest priority score first.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Submitted</th>
+                    <th>Product</th>
+                    <th>Company</th>
+                    <th>Predicted Sentiment</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for complaint in complaints %}
+                <tr>
+                    <td>{{ complaint.id }}</td>
+                    <td>{{ complaint.submission_timestamp[:16] }}</td>
+                    <td>{{ complaint.product }}</td>
+                    <td>{{ complaint.company }}</td>
+                    <td>
+                        <span class="sentiment sentiment-{{ complaint.predicted_sentiment }}">
+                            {{ complaint.predicted_sentiment.replace('_', ' ')|title }}
+                        </span>
+                    </td>
+                    <td>{{ "%.2f"|format(complaint.priority_score) }}</td>
+                    <td>{{ complaint.status }}</td>
+                    <td>
+                        <a href="{{ url_for('complaint_detail', complaint_id=complaint.id) }}">View / Update</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align:center;">No complaints found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

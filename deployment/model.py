@@ -29,7 +29,6 @@ class ModelLoader:
         Raises:
             FileNotFoundError: If the given model_path does not exist
         """
-
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Model file not fount at: {self.model_path}")
 
