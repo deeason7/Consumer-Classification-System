@@ -1,6 +1,6 @@
 # Consumer Complaint Sentiment Insights and Classification System
 
-An end-to-end NLP pipeline that classifies the sentiment of consumer financial complaints using a hybrid deep learning model optimized with hyperparameter tuning and served via an interactive command-line interface.
+An end-to-end NLP pipeline that classifies the sentiment of consumer financial complaints using a hybrid deep learning model, accessible via an interactive web application and a command-line interface.
 
 ---
 
@@ -16,7 +16,7 @@ The **Consumer Financial Protection Bureau (CFPB)** collects thousands of consum
 
 ## 2. Problem Statement
 
-How can we leverage NLP and deep learning to build a scalable, production-ready pipeline that classifies consumer-complaint narratives into three sentiment levels:
+How can we leverage NLP and deep learning to build a scalable, production-ready pipeline that classifies consumer-complaint narratives into three sentiment levels and provides a workflow for managing them:
 * Neutral
 * Negative
 * Extreme Negative
@@ -26,10 +26,13 @@ How can we leverage NLP and deep learning to build a scalable, production-ready 
 ## 3. Key Features
 
 * **Hybrid Deep Learning Model**: The system's core is a BiLSTM model that processes both the complaint text and structured metadata (like text length and keyword flags) for more nuanced predictions.
-* **Hyperparameter Tuning**: Utilizes **Keras Tuner** to systematically find the optimal model architecture and parameters, significantly boosting performance over a baseline model.
-* **Interactive CLI**: A user-friendly Command-Line Interface (`app.py`) allows for real-time predictions by simply typing or pasting a complaint narrative.
-* **Automated Logging**: Every prediction is automatically timestamped and saved to a local **SQLite** database (`storage.py`), creating a verifiable log of model activity.
-* **Modular & Scalable Design**: The code is cleanly separated into modules for data processing,and a dedicated `deployment/` package for inference, making it easy to maintain and extend.
+* **Hyperparameter Tuning**: Utilizes **Keras Tuner** to systematically find the optimal model architecture and parameters, significantly boosting performance.
+* **Dual-Interface Web Application**: A user-friendly **Flask** web app provides two distinct views:
+    * **Customer Portal**: Allows users to submit new complaints and check the status of existing ones using a unique reference ID.
+    * **Agent Dashboard**: An internal tool that displays all complaints, automatically prioritized by a sentiment-based score, allowing for efficient review and management.
+* **Interactive CLI**: For developers and power users, an interactive Command-Line Interface (`app.py`) offers an alternative way to get real-time predictions.
+* **Persistent Complaint Tracking**: Submissions are automatically timestamped and saved to a local **SQLite** database, creating a verifiable log and tracking the status of each complaint from "Submitted" to "Responded."
+* **Modular & Scalable Design**: The code is cleanly separated into modules for data processing and a dedicated `deployment/` package for inference.
 
 ---
 
@@ -52,7 +55,7 @@ The initial analysis was guided by several hypotheses to uncover deeper insights
 | **Data & Modeling** | Pandas, NumPy, TensorFlow / Keras (BiLSTM), Scikit-learn   |
 | **Hyperparameter Tuning** | Keras Tuner                                                |
 | **NLP Preprocessing** | NLTK, TextBlob                                             |
-| **Deployment & Storage** | CLI Application, SQLite, Dotenv                            |
+| **Deployment & Storage** | Flask Web Application, CLI, SQLite, Dotenv                 |
 | **Version Control** | Git & GitHub                                               |
 
 ---
@@ -61,11 +64,11 @@ The initial analysis was guided by several hypotheses to uncover deeper insights
 
 | #  | Objective                                                                     | Status    |
 | :--| :---------------------------------------------------------------------------- | :-------- |
-| 1  | Load & explore raw dataset; perform basic structural cleaning                 |  Complete |
+| 1  | Load & explore raw dataset; perform basic structural cleaning                 | Complete |
 | 2  | Clean & normalize complaint text; engineer initial “weak” sentiment labels    |  Complete |
 | 3  | Exploratory Data Analysis to validate features and guide modeling             |  Complete |
-| 4  | **Tune & Train** an Optimized BiLSTM Model with Keras Tuner                     | Complete |
-| 5  | Test & demonstrate the trained model via an **Interactive CLI Application** |  Complete |
+| 4  | **Tune & Train** an Optimized BiLSTM Model with Keras Tuner                     |  Complete |
+| 5  | **Deploy** the model via an **Interactive Web App & CLI** |  Complete |
 
 ---
 
@@ -101,39 +104,22 @@ The initial analysis was guided by several hypotheses to uncover deeper insights
 
 ## 8. Usage
 
-The primary way to interact with the model is through the command-line application. The notebooks in the `notebooks/` directory show the full analysis and training workflow.
+The application can be run as a Web Application (recommended) or a Command-Line Interface.
 
 1.  **Navigate to the project directory** and ensure your virtual environment is activated.
 
-2.  **Run the application:**
+2.  **Run the main application launcher:**
     ```sh
     python deployment/app.py
     ```
 
-3.  **Interact with the CLI:**
-    The application will load the model and artifacts, then present you with an interactive prompt. You can type or paste a complaint narrative and press **Enter** to get a real-time sentiment prediction.
+3.  **Choose an interface from the menu:**
+    * **Option 1: Web Interface (Recommended)**
+        * Select `1` to launch the Flask web server.
+        * Open your browser and navigate to **`http://127.0.0.1:5001`**.
+        * From the web page, you can submit new complaints, check the status of a past submission, or navigate to the agent dashboard.
+        * **Agent Dashboard URL**: **`http://127.0.0.1:5001/dashboard`**
 
-    **Example Interaction:**
-
-Consumer Complaint Sentiment CLI<br>
-Enter the details for a new complaint. Type 'exit' to quit.<br>
-
-Enter complaint narrative: I was charged an unexpected fee for fraud protection services. I have tried contacting customer service multiple times with no response!<br>
-Enter product (e.g., 'Mortgage', 'Credit card'): Credit Card<br>
-Enter company (e.g., 'Wells Fargo & Company'): Chase<br>
-Was the response timely? (yes/no): no<br>
-
-Prediction Result<br>
-  Sentiment Label:  extreme_negative<br>
-  Confidence Score: 1.00<br>
-
-  Features Used:<br>
-    - text_length: 21.0<br>
-    - timely_response_binary: 0<br>
-    - product_dispute_rate: 0.9679999947547913<br>
-    - company_dispute_rate: 1.0192999839782715<br>
-    - keyword_flag: 1<br>
-
- Logged prediction at 2025-08-08T22:19:41.008879<br>
-
-
+    * **Option 2: Command-Line Interface (CLI)**
+        * Select `2` to launch the interactive CLI in your terminal.
+        * Follow the prompts to enter a complaint narrative and its details to get a real-time prediction.
